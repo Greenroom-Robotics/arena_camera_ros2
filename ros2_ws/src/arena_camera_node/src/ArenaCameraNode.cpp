@@ -550,3 +550,14 @@ void ArenaCameraNode::set_nodes_test_pattern_image_()
   auto nodemap = m_pDevice->GetNodeMap();
   Arena::SetNodeValue<GenICam::gcstring>(nodemap, "TestPattern", "Pattern3");
 }
+
+int main(int argc, char* argv[])
+{
+  rclcpp::init(argc, argv);
+  {
+    auto node = std::make_shared<ArenaCameraNode>();
+    rclcpp::spin(node);
+  }
+  rclcpp::shutdown();
+  return 0;
+}
