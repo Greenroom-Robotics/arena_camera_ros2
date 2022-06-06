@@ -107,7 +107,6 @@ set(target_name start)
 
 # CPP DEPS
 add_executable(${target_name}
-    src/main.cpp
     src/ArenaCameraNode.cpp
     src/light_arena/deviceinfo_helper.cpp
     src/rclcpp_adapter/pixelformat_translation.cpp
