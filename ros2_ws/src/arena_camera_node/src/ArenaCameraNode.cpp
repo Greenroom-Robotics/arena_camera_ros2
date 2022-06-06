@@ -61,7 +61,7 @@ void ArenaCameraNode::parse_parameters_()
     is_passed_pub_qos_reliability_ = pub_qos_reliability_ != "";
 
   } catch (rclcpp::ParameterTypeException& e) {
-    log_err(nextParameterToDeclare + " argument");
+    RCLCPP_ERROR(this->get_logger(), "Invalid argument: %s", nextParameterToDeclare.c_str());
     throw;
   }
 }
@@ -75,7 +75,7 @@ void ArenaCameraNode::initialize_()
       std::shared_ptr<Arena::ISystem>(nullptr, [=](Arena::ISystem* pSystem) {
         if (pSystem) {  // this is an issue for multi devices
           Arena::CloseSystem(pSystem);
-          log_info("System is destroyed");
+          RCLCPP_INFO(this->get_logger(), "System is destroyed");
         }
       });
   m_pSystem.reset(Arena::OpenSystem());
@@ -85,7 +85,7 @@ void ArenaCameraNode::initialize_()
       std::shared_ptr<Arena::IDevice>(nullptr, [=](Arena::IDevice* pDevice) {
         if (m_pSystem && pDevice) {
           m_pSystem->DestroyDevice(pDevice);
-          log_info("Device is destroyed");
+          RCLCPP_INFO(this->get_logger(), "Device is destroyed");
         }
       });
 
@@ -134,9 +134,9 @@ void ArenaCameraNode::initialize_()
       pub_qos_.history(
           K_CMDLN_PARAMETER_TO_QOS_HISTORY_POLICY[pub_qos_history_]);
     } else {
-      log_err(pub_qos_history_ + " is not supported for this node");
+      RCLCPP_ERROR(this->get_logger(), "%s is not supported for this node", pub_qos_history_.c_str());
       // TODO
-      // should thorow instead??
+      // should throw instead??
       // should this keeps shutting down if for some reasons this node is kept
       // alive
       throw;
@@ -157,7 +157,7 @@ void ArenaCameraNode::initialize_()
       pub_qos_.reliability(
           K_CMDLN_PARAMETER_TO_QOS_RELIABILITY_POLICY[pub_qos_reliability_]);
     } else {
-      log_err(pub_qos_reliability_ + " is not supported for this node");
+      RCLCPP_ERROR(this->get_logger(), "%s is not supported for this node", pub_qos_reliability_.c_str());
       throw;
     }
   }
@@ -183,14 +183,14 @@ void ArenaCameraNode::initialize_()
                                                                   .reliability]
                << '\n';
 
-  log_info(pub_qos_info.str());
+  RCLCPP_INFO(this->get_logger(), pub_qos_info.str().c_str());
 }
 
 void ArenaCameraNode::wait_for_device_timer_callback_()
 {
   // something happend while checking for cameras
   if (!rclcpp::ok()) {
-    log_err("Interrupted while waiting for arena camera. Exiting.");
+    RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for arena camera. Exiting.");
     rclcpp::shutdown();
   }
 
@@ -200,13 +200,12 @@ void ArenaCameraNode::wait_for_device_timer_callback_()
 
   // no camera is connected
   if (!device_infos.size()) {
-    log_info("No arena camera is connected. Waiting for device(s)...");
+    RCLCPP_INFO(this->get_logger(), "No arena camera is connected. Waiting for device(s)...");
   }
-  // at least on is found
+  // at least one is found
   else {
     m_wait_for_device_timer_callback_->cancel();
-    log_info(std::to_string(device_infos.size()) +
-             " arena device(s) has been discoved.");
+    RCLCPP_INFO(this->get_logger(), "%ld arena device(s) has been discovered.", device_infos.size());
     run_();
   }
 }
@@ -236,16 +235,14 @@ void ArenaCameraNode::publish_images_()
 
       m_pub_->publish(std::move(p_image_msg));
 
-      log_info(std::string("image ") + std::to_string(pImage->GetFrameId()) +
-               " published to " + topic_);
+      RCLCPP_INFO(this->get_logger(), "image %ld published to %s", pImage->GetFrameId(), topic_.c_str());
       this->m_pDevice->RequeueBuffer(pImage);
 
     } catch (std::exception& e) {
       if (pImage) {
         this->m_pDevice->RequeueBuffer(pImage);
         pImage = nullptr;
-        log_warn(std::string("Exception occurred while publishing an image\n") +
-                 e.what());
+        RCLCPP_WARN(this->get_logger(), "Exception occurred while publishing an image: %s", e.what());
       }
     }
   };
@@ -305,7 +302,7 @@ void ArenaCameraNode::msg_form_image_(Arena::IImage* pImage,
                 image_data_length_in_bytes);
 
   } catch (...) {
-    log_warn(
+    RCLCPP_WARN(this->get_logger(),
         "Failed to create Image ROS MSG. Published Image Msg might be "
         "corrupted");
   }
@@ -319,12 +316,12 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
     std::string msg =
         "Failed to trigger image because the device is not in trigger mode."
         "run `ros2 run arena_camera_node run --ros-args -p trigger_mode:=true`";
-    log_warn(msg);
+    RCLCPP_WARN(this->get_logger(), msg.c_str());
     response->message = msg;
     response->success = false;
   }
 
-  log_info("A client triggered an image request");
+  RCLCPP_INFO(this->get_logger(), "A client triggered an image request");
 
   Arena::IImage* pImage = nullptr;
   try {
@@ -337,18 +334,18 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
           Arena::GetNodeValue<bool>(m_pDevice->GetNodeMap(), "TriggerArmed");
 
       if (triggerArmed == false && (waitForTriggerCount % 10) == 0) {
-        log_info("waiting for trigger to be armed");
+        RCLCPP_INFO(this->get_logger(), "waiting for trigger to be armed");
       }
 
     } while (triggerArmed == false);
 
-    log_debug("trigger is armed; triggering an image");
+    RCLCPP_DEBUG(this->get_logger(), "trigger is armed; triggering an image");
     Arena::ExecuteNode(m_pDevice->GetNodeMap(), "TriggerSoftware");
 
     // get image
     auto p_image_msg = std::make_unique<sensor_msgs::msg::Image>();
 
-    log_debug("getting an image");
+    RCLCPP_DEBUG(this->get_logger(), "getting an image");
     pImage = m_pDevice->GetImage(1000);
     auto msg = std::string("image ") + std::to_string(pImage->GetFrameId()) +
                " published to " + topic_;
@@ -357,7 +354,7 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
     response->message = msg;
     response->success = true;
 
-    log_info(msg);
+    RCLCPP_INFO(this->get_logger(), msg.c_str());
     this->m_pDevice->RequeueBuffer(pImage);
 
   }
@@ -369,7 +366,7 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
     }
     auto msg =
         std::string("Exception occurred while grabbing an image\n") + e.what();
-    log_warn(msg);
+    RCLCPP_WARN(this->get_logger(), msg.c_str());
     response->message = msg;
     response->success = false;
 
@@ -383,7 +380,7 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
     auto msg =
         std::string("GenICam Exception occurred while grabbing an image\n") +
         e.what();
-    log_warn(msg);
+    RCLCPP_WARN(this->get_logger(), msg.c_str());
     response->message = msg;
     response->success = false;
   }
@@ -405,8 +402,7 @@ Arena::IDevice* ArenaCameraNode::create_device_ros_()
   }
 
   auto pDevice = m_pSystem->CreateDevice(device_infos.at(index));
-  log_info(std::string("device created ") +
-           DeviceInfoHelper::info(device_infos.at(index)));
+  RCLCPP_INFO(this->get_logger(), "device created %s", DeviceInfoHelper::info(device_infos.at(index)).c_str());
   return pDevice;
 }
 
@@ -429,7 +425,7 @@ void ArenaCameraNode::set_nodes_load_default_profile_()
   Arena::SetNodeValue<GenICam::gcstring>(nodemap, "UserSetSelector", "Default");
   // execute the profile
   Arena::ExecuteNode(nodemap, "UserSetLoad");
-  log_info("\tdefault profile is loaded");
+  RCLCPP_INFO(this->get_logger(), "\tdefault profile is loaded");
 }
 
 void ArenaCameraNode::set_nodes_roi_()
@@ -451,8 +447,7 @@ void ArenaCameraNode::set_nodes_roi_()
   }
 
   // TODO only if it was passed by ros arg
-  log_info(std::string("\tROI set to ") + std::to_string(width_) + "X" +
-           std::to_string(height_));
+  RCLCPP_INFO(this->get_logger(),"ROI set to %ldx%ld", width_, height_);
 }
 
 void ArenaCameraNode::set_nodes_gain_()
@@ -460,7 +455,7 @@ void ArenaCameraNode::set_nodes_gain_()
   if (is_passed_gain_) {  // not default
     auto nodemap = m_pDevice->GetNodeMap();
     Arena::SetNodeValue<double>(nodemap, "Gain", gain_);
-    log_info(std::string("\tGain set to ") + std::to_string(gain_));
+    RCLCPP_INFO(this->get_logger(), "Gain set to %f", gain_);
   }
 }
 
@@ -479,7 +474,7 @@ void ArenaCameraNode::set_nodes_pixelformat_()
     try {
       Arena::SetNodeValue<GenICam::gcstring>(nodemap, "PixelFormat",
                                              pixelformat_pfnc_.c_str());
-      log_info(std::string("\tPixelFormat set to ") + pixelformat_pfnc_);
+      RCLCPP_INFO(this->get_logger(), "PixelFormat set to %s", pixelformat_pfnc_.c_str());
 
     } catch (GenICam::GenericException& e) {
       // TODO
@@ -494,7 +489,7 @@ void ArenaCameraNode::set_nodes_pixelformat_()
     pixelformat_ros_ = K_PFNC_TO_ROS2_PIXELFORMAT[pixelformat_pfnc_];
 
     if (pixelformat_ros_.empty()) {
-      log_warn(
+      RCLCPP_WARN(this->get_logger(),
           "the device current pixelfromat value is not supported by ROS2. "
           "please use --ros-args -p pixelformat:=\"<supported pixelformat>\".");
       // TODO
@@ -517,7 +512,7 @@ void ArenaCameraNode::set_nodes_trigger_mode_()
   auto nodemap = m_pDevice->GetNodeMap();
   if (trigger_mode_activated_) {
     if (exposure_time_ < 0) {
-      log_warn(
+      RCLCPP_WARN(this->get_logger(),
           "\tavoid long waits wating for triggered images by providing proper "
           "exposure_time.");
     }
@@ -539,7 +534,7 @@ void ArenaCameraNode::set_nodes_trigger_mode_()
         std::string(
             "\ttrigger_mode is activated. To trigger an image run `ros2 run ") +
         this->get_name() + " trigger_image`";
-    log_warn(msg);
+    RCLCPP_WARN(this->get_logger(), msg.c_str());
   }
   // unset device from being in trigger mode if user did not pass trigger
   // mode parameter because the trigger nodes are not rest when loading

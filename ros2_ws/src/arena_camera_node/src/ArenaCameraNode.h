@@ -18,7 +18,7 @@
 #include <std_srvs/srv/trigger.hpp>   // Trigger
 
 // arena sdk
-#include "ArenaApi.h"
+#include "Arena/ArenaApi.h"
 
 class ArenaCameraNode : public rclcpp::Node
 {
@@ -28,21 +28,11 @@ class ArenaCameraNode : public rclcpp::Node
     // set stdout buffer size for ROS defined size BUFSIZE
     setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 
-    log_info(std::string("Creating \"") + this->get_name() + "\" node");
+    RCLCPP_INFO(this->get_logger(), "Initialising %s node", this->get_name());
     parse_parameters_();
     initialize_();
-    log_info(std::string("Created \"") + this->get_name() + "\" node");
+    RCLCPP_INFO(this->get_logger(), "Created %s node", this->get_name());
   }
-
-  ~ArenaCameraNode()
-  {
-    log_info(std::string("Destroying \"") + this->get_name() + "\" node");
-  }
-
-  void log_debug(std::string msg) { RCLCPP_DEBUG(this->get_logger(), msg); };
-  void log_info(std::string msg) { RCLCPP_INFO(this->get_logger(), msg); };
-  void log_warn(std::string msg) { RCLCPP_WARN(this->get_logger(), msg); };
-  void log_err(std::string msg) { RCLCPP_ERROR(this->get_logger(), msg); };
 
  private:
   std::shared_ptr<Arena::ISystem> m_pSystem;

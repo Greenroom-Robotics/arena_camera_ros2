@@ -30,9 +30,6 @@ endif()
 # CUSTOM DEPS PATHS
 # ------------------
 
-# arenasdk find file dir
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
-
 # ----------
 # FIND DEPS
 # ----------
@@ -47,7 +44,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(arena_sdk REQUIRED)
+find_package(arena_sdk_vendor REQUIRED)
 
 # ------------
 # EXPORT DEPS
@@ -142,7 +139,7 @@ ament_target_dependencies(${target_name}  rclcpp
                                           std_msgs 
                                           std_srvs
                                           sensor_msgs
-                                          arena_sdk
+                                          arena_sdk_vendor
                                           )
 
 
@@ -172,7 +169,7 @@ add_executable(${trigger_image} src/trigger_image_client.cpp)
 # - this way it will find our header libs automatically
 # - for ArenAsdk the cmake way is used no ament
 ament_target_dependencies(${trigger_image}  rclcpp 
-                                          std_srvs)
+                                          std_srvs arena_sdk_vendor)
 
 # HEADERS DEP
 target_include_directories(${trigger_image}
