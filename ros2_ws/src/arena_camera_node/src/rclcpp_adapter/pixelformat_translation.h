@@ -8,7 +8,7 @@
 #include <sensor_msgs/image_encodings.hpp>
 
 // ArenaSDK
-#include "ArenaApi.h"  // GetPixelFormatName() , PfncFormat::
+#include "Arena/ArenaApi.h"  // GetPixelFormatName() , PfncFormat::
 
 static std::map<std::string, std::string> K_ROS2_PIXELFORMAT_TO_PFNC(
     {{sensor_msgs::image_encodings::RGB8, GetPixelFormatName(PfncFormat::RGB8)},

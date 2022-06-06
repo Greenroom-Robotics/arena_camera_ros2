@@ -1,7 +1,7 @@
 #pragma once
 #include <memory>
 #include <vector>
-#include "ArenaApi.h"
+#include "Arena/ArenaApi.h"
 
 class DeviceInfoHelper
 {
