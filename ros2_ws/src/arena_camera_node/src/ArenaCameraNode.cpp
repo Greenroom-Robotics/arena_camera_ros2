@@ -13,57 +13,38 @@
 
 void ArenaCameraNode::parse_parameters_()
 {
-  std::string nextParameterToDeclare = "";
-  try {
-    nextParameterToDeclare = "serial";
     serial_ = this->declare_parameter<std::string>("serial", "");
     is_passed_serial_ = serial_ != "";
 
-    nextParameterToDeclare = "pixelformat";
     pixelformat_ros_ = this->declare_parameter("pixelformat", "");
     is_passed_pixelformat_ros_ = pixelformat_ros_ != "";
 
-    nextParameterToDeclare = "width";
+    frame_id = this->declare_parameter("frame_id", "lucid_camera");
+
     width_ = this->declare_parameter("width", 0);
     is_passed_width = width_ > 0;
 
-    nextParameterToDeclare = "height";
     height_ = this->declare_parameter("height", 0);
     is_passed_height = height_ > 0;
 
-    nextParameterToDeclare = "gain";
     gain_ = this->declare_parameter("gain", -1.0);
     is_passed_gain_ = gain_ >= 0;
 
-    nextParameterToDeclare = "exposure_time";
     exposure_time_ = this->declare_parameter("exposure_time", -1.0);
     is_passed_exposure_time_ = exposure_time_ >= 0;
 
-    nextParameterToDeclare = "trigger_mode";
     trigger_mode_activated_ = this->declare_parameter("trigger_mode", false);
-    // no need to is_passed_trigger_mode_ because it is already a boolean
 
-    nextParameterToDeclare = "topic";
-    topic_ = this->declare_parameter(
-        "topic", std::string("/") + this->get_name() + "/images");
-    // no need to is_passed_topic_
+    test_pattern = this->declare_parameter("test_pattern", "");
 
-    nextParameterToDeclare = "qos_history";
     pub_qos_history_ = this->declare_parameter("qos_history", "");
     is_passed_pub_qos_history_ = pub_qos_history_ != "";
 
-    nextParameterToDeclare = "qos_history_depth";
     pub_qos_history_depth_ = this->declare_parameter("qos_history_depth", 0);
     is_passed_pub_qos_history_depth_ = pub_qos_history_depth_ > 0;
 
-    nextParameterToDeclare = "qos_reliability";
     pub_qos_reliability_ = this->declare_parameter("qos_reliability", "");
     is_passed_pub_qos_reliability_ = pub_qos_reliability_ != "";
-
-  } catch (rclcpp::ParameterTypeException& e) {
-    RCLCPP_ERROR(this->get_logger(), "Invalid argument: %s", nextParameterToDeclare.c_str());
-    throw;
-  }
 }
 
 void ArenaCameraNode::initialize_()
@@ -104,7 +85,7 @@ void ArenaCameraNode::initialize_()
   //
   using namespace std::placeholders;
   m_trigger_an_image_srv_ = this->create_service<std_srvs::srv::Trigger>(
-      std::string(this->get_name()) + "/trigger_image",
+      "/arena_camera_node/trigger_image",
       std::bind(&ArenaCameraNode::publish_an_image_on_trigger_, this, _1, _2));
 
   //
@@ -167,7 +148,7 @@ void ArenaCameraNode::initialize_()
   // auto pub_qos_init = rclcpp::QoSInitialization(history_policy_, );
 
   m_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-      this->get_parameter("topic").as_string(), pub_qos_);
+      "/arena_camera_node/images", pub_qos_);
 
   std::stringstream pub_qos_info;
   auto pub_qos_profile = pub_qos_.get_rmw_qos_profile();
@@ -180,8 +161,7 @@ void ArenaCameraNode::initialize_()
   pub_qos_info << "\t\t\t\t"
                << "QoS reliability = "
                << K_QOS_RELIABILITY_POLICY_TO_CMDLN_PARAMETER[pub_qos_profile
-                                                                  .reliability]
-               << '\n';
+                                                                  .reliability];
 
   RCLCPP_INFO(this->get_logger(), pub_qos_info.str().c_str());
 }
@@ -235,14 +215,14 @@ void ArenaCameraNode::publish_images_()
 
       m_pub_->publish(std::move(p_image_msg));
 
-      RCLCPP_INFO(this->get_logger(), "image %ld published to %s", pImage->GetFrameId(), topic_.c_str());
+      RCLCPP_DEBUG(this->get_logger(), "image %ld published", pImage->GetFrameId());
       this->m_pDevice->RequeueBuffer(pImage);
 
     } catch (std::exception& e) {
       if (pImage) {
         this->m_pDevice->RequeueBuffer(pImage);
         pImage = nullptr;
-        RCLCPP_WARN(this->get_logger(), "Exception occurred while publishing an image: %s", e.what());
+        RCLCPP_ERROR(this->get_logger(), "Exception occurred while publishing an image: %s", e.what());
       }
     }
   };
@@ -252,49 +232,23 @@ void ArenaCameraNode::msg_form_image_(Arena::IImage* pImage,
                                       sensor_msgs::msg::Image& image_msg)
 {
   try {
-    // 1 ) Header
-    //      - stamp.sec
-    //      - stamp.nanosec
-    //      - Frame ID
     image_msg.header.stamp.sec =
         static_cast<uint32_t>(pImage->GetTimestampNs() / 1000000000);
     image_msg.header.stamp.nanosec =
         static_cast<uint32_t>(pImage->GetTimestampNs() % 1000000000);
-    image_msg.header.frame_id = std::to_string(pImage->GetFrameId());
-
-    //
-    // 2 ) Height
-    //
+    image_msg.header.frame_id = frame_id;
     image_msg.height = height_;
-
-    //
-    // 3 ) Width
-    //
     image_msg.width = width_;
-
-    //
-    // 4 ) encoding
-    //
     image_msg.encoding = pixelformat_ros_;
-
-    //
-    // 5 ) is_big_endian
-    //
     // TODO what to do if unknown
     image_msg.is_bigendian = pImage->GetPixelEndianness() ==
                              Arena::EPixelEndianness::PixelEndiannessBig;
-    //
-    // 6 ) step
-    //
     // TODO could be optimized by moving it out
     auto pixel_length_in_bytes = pImage->GetBitsPerPixel() / 8;
     auto width_length_in_bytes = pImage->GetWidth() * pixel_length_in_bytes;
     image_msg.step =
         static_cast<sensor_msgs::msg::Image::_step_type>(width_length_in_bytes);
 
-    //
-    // 7) data
-    //
     auto image_data_length_in_bytes = width_length_in_bytes * height_;
     image_msg.data.resize(image_data_length_in_bytes);
     auto x = pImage->GetData();
@@ -302,7 +256,7 @@ void ArenaCameraNode::msg_form_image_(Arena::IImage* pImage,
                 image_data_length_in_bytes);
 
   } catch (...) {
-    RCLCPP_WARN(this->get_logger(),
+    RCLCPP_ERROR(this->get_logger(),
         "Failed to create Image ROS MSG. Published Image Msg might be "
         "corrupted");
   }
@@ -348,7 +302,7 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
     RCLCPP_DEBUG(this->get_logger(), "getting an image");
     pImage = m_pDevice->GetImage(1000);
     auto msg = std::string("image ") + std::to_string(pImage->GetFrameId()) +
-               " published to " + topic_;
+               " published";
     msg_form_image_(pImage, *p_image_msg);
     m_pub_->publish(std::move(p_image_msg));
     response->message = msg;
@@ -414,7 +368,9 @@ void ArenaCameraNode::set_nodes_()
   set_nodes_pixelformat_();
   set_nodes_exposure_();
   set_nodes_trigger_mode_();
-  set_nodes_test_pattern_image_();
+  if (!test_pattern.empty()) {
+    set_nodes_test_pattern_image_();
+  }
 }
 
 void ArenaCameraNode::set_nodes_load_default_profile_()
@@ -425,7 +381,7 @@ void ArenaCameraNode::set_nodes_load_default_profile_()
   Arena::SetNodeValue<GenICam::gcstring>(nodemap, "UserSetSelector", "Default");
   // execute the profile
   Arena::ExecuteNode(nodemap, "UserSetLoad");
-  RCLCPP_INFO(this->get_logger(), "\tdefault profile is loaded");
+  RCLCPP_INFO(this->get_logger(), "default profile is loaded");
 }
 
 void ArenaCameraNode::set_nodes_roi_()
@@ -548,7 +504,8 @@ void ArenaCameraNode::set_nodes_trigger_mode_()
 void ArenaCameraNode::set_nodes_test_pattern_image_()
 {
   auto nodemap = m_pDevice->GetNodeMap();
-  Arena::SetNodeValue<GenICam::gcstring>(nodemap, "TestPattern", "Pattern3");
+  Arena::SetNodeValue<GenICam::gcstring>(nodemap, "TestPattern", test_pattern.c_str());
+  RCLCPP_INFO(this->get_logger(), "Setting test pattern to %s", test_pattern.c_str());
 }
 
 int main(int argc, char* argv[])
