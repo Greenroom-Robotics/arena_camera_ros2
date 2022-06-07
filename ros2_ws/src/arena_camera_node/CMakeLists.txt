@@ -19,26 +19,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 	#add_compile_options(-Wall -Wextra -Wpedantic -Wunknown-pragmas)
 endif()
 
-# -----------------------------------------------------------------------------
-#
-# ALL PKGS SETTIGNS
-#
-# -----------------------------------------------------------------------------
 
-
-# ------------------
-# CUSTOM DEPS PATHS
-# ------------------
-
-# ----------
-# FIND DEPS
-# ----------
-
-# finds dependencies
-# - same as the ones mentioned in package.xml under
-#   the tags <buildtool_depend>, <build_depend>, <exec_depend>
-# - for pakages used in #includes
-# - even if a dependency is used in one package, it has to be found
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -46,64 +27,13 @@ find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(arena_sdk_vendor REQUIRED)
 
-# ------------
-# EXPORT DEPS
-# ------------
-
-# export dependencies
-# For packages that depends on arena_camera_node
-# basically the dependecies of the depencey
-# these are the one mentioned in
-# - "find_package"
-# - "ament_target_dependencies"
-# - forgetting to export a depencey would not show at the time of
-#   building the package but when other packages use this package
-#ament_export_dependencies(ament_cmake)
-#ament_export_dependencies(ament_cmake_python)
-#ament_export_dependencies(rclcpp)
-#ament_export_dependencies(std_msgs)
-# Export package dependencies
-#ament_export_dependencies(ament_cmake)
-#ament_export_dependencies(ament_cmake_python)
-#ament_export_dependencies(rclcpp)
-#ament_export_dependencies(rclpy)
-#ament_export_dependencies(sensor_msgs)
-#ament_export_dependencies(std_srvs)
-
-# -------------
-# LAUNCH FILES
-# -------------
-
-# install launch files.
-#install(
-#  DIRECTORY launch
-#  DESTINATION share/${PROJECT_NAME}/
-# )
-
-# --------
-# HEADERS
-# --------
-
-# MV .hpp (s) to include dir
-#install(
-#  DIRECTORY include/${PROJECT_NAME}/
-#  DESTINATION include/${PROJECT_NAME}
-#  FILES_MATCHING PATTERN "*.hpp")
-
-#
-# EXPORT HEADERS should it before the "ament_export_dependencies" ?
-#
-#ament_export_include_directories(include)
-#ament_export_include_directories(include ${rclcpp_INCLUDE_DIRS})
-
-
 # -----------------------------------------------------------------------------
 #
 # ROS2 RUN ARENA_CAMERA_NODE <>
 #
 # -----------------------------------------------------------------------------
 
-set(target_name start)
+set(target_name camera_node)
 
 # CPP DEPS
 add_executable(${target_name}
@@ -131,9 +61,6 @@ add_executable(${target_name}
 # EXPORT .a file for other pakges ?
 #ament_export_libraries(${PROJECT_NAME} ${rclcpp_LIBRARIES})
 
-# ROS DEP
-# - this way, it will find our header libs automatically
-# - for Arenasdk the cmake way is used no ament
 ament_target_dependencies(${target_name}  rclcpp 
                                           std_msgs 
                                           std_srvs
@@ -142,9 +69,7 @@ ament_target_dependencies(${target_name}  rclcpp
                                           )
 
 
-# MV EXEC to lib dir
-install(TARGETS
-  ${target_name} 
+install(TARGETS ${target_name} 
     DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -184,24 +109,10 @@ install(TARGETS
 )
 # -----------------------------------------------------------------------------
 
-#
-#
-# PYTHON
-#
-#
+# Include launch file directory
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME})
 
-#ament_cmake_python()
-
-
-# invistifate ----------------------------
-# Install python scripts
-#install(DIRECTORY arena_camera_node
-#        DESTINATION lib
-#        FILES_MATCHING REGEX "arena_camera_node/.+\.py")
-
-#install(DIRECTORY arena_camera_node
-#        DESTINATION ../build
-#        FILES_MATCHING REGEX "arena_camera_node/.+\.py")
 # TESTING ---------------------------------------------------------------------
 
 if(BUILD_TESTING)

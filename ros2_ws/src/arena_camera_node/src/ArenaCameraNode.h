@@ -45,8 +45,6 @@ class ArenaCameraNode : public rclcpp::Node
   std::string serial_;
   bool is_passed_serial_;
 
-  std::string topic_;
-
   size_t width_;
   bool is_passed_width;
 
@@ -62,8 +60,10 @@ class ArenaCameraNode : public rclcpp::Node
   std::string pixelformat_pfnc_;
   std::string pixelformat_ros_;
   bool is_passed_pixelformat_ros_;
-
+  std::string test_pattern;
   bool trigger_mode_activated_;
+
+  std::string frame_id;
 
   std::string pub_qos_history_;
   bool is_passed_pub_qos_history_;

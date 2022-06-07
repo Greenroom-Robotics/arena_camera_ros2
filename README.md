@@ -20,20 +20,7 @@ Arena Camera deriver for ROS2
     
     `git clone https://github.com/lucidvisionlabs/arena_camera_ros2.git`
 
-- install ArenaSDK and arena_api
-  - contact support@thinklucid.com
-
-- install ROS2 and setup the environment 
-    
-    `cat arena_camera_ros2\ros2_arena_setup.sh` to view the script
-    
-    uncomment `echo "source /opt/ros/eloquent/setup.bash" >> ~/.bashrc` if using a regular terminal
-
-    `cd arena_camera_ros2 ; sudo sh ros2_arena_setup.sh` installs ROS2 Eloquent distro
-
 - build workspace and its dependencies
-
-    `source ~/.bashrc`if using a regular terminal
 
     `cd arena_camera_ros2\ros2_ws`
 
@@ -49,38 +36,34 @@ Arena Camera deriver for ROS2
 - explore nodes
     - arena_camera_node
       - this is the main node. It represent one LUCID Camera.
-      - it has two executable `start` and `trigger_image`
+      - it has two executable `camera_node` and `trigger_image`
       - ros arguments
-        - serial 
+        - `serial`
           - a string representing the serial of the device to create.
           - if not provided the node, it will represent the first dicovered camera.
-        - topic
-          - the topic the camera publish images on.
-          - default value is /arena_camera_node/images.
-          - if passed as a ros argument, it should be preceded with "/"
-        - width
+        - `width`
           - the width of desired image
           - default value is the one in `default` user profile.
-        - height
+        - `height`
           - the height of desired image
           - default value is the one in `default` user profile.
-        - pixelformat
+        - `pixelformat`
           - the pixel format of the deisred image
           - supported pixelformats are "rgb8", "rgba8", "rgb16", "rgba16", "bgr8", "bgra8", "bgr16", "bgra16",
                                        "mono8", "mono16", "bayer_rggb8", "bayer_bggr8", "bayer_gbrg8",
                                        "bayer_grbg8", "bayer_rggb16", "bayer_bggr16", "bayer_gbrg16", "bayer_grbg16", 
                                        "yuv422"
-        - gain
+        - `gain`
           - a double value represents the gain of the image.
 
-        - exposure_time
+        - `exposure_time`
           - the time elapsed before the camera sensor creates the image.
           - units is micro seconds.
           - big values might makes the image take too long before it is view/published.
           - if trigger_mode is passed to node them it is recommended to set exposure_time as well so the
             triggered images do not take longer than expected.
 
-        - trigger_mode
+        - `trigger_mode`
           - puts the device in ready state where it will wait for a `trigger_image` client to request an image.
           - default value is false. It means the device will be publishing images to the
             default topic `/arena_camera_node/images`.
@@ -98,7 +81,10 @@ Arena Camera deriver for ROS2
             `ros2 run image_tools showimage # no image will be displayed yet`
 
             `ros2 run arena_camera_node trigger_image`
-       
+
+        - `test_pattern`
+          - Have the camera output a test pattern instead of captures. Values are of format `Pattern3`. Default is an empty string indicating no test pattern.
+
       - QoS related parameters
         - if using these images with some subscriber make sure: 
           - both `arena_camera_node` and the subscriber on the same topic.
