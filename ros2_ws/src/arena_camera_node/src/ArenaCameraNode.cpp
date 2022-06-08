@@ -36,8 +36,11 @@ void ArenaCameraNode::parse_parameters_()
     is_passed_exposure_time_ = exposure_time_ >= 0;
 
     trigger_mode_activated_ = this->declare_parameter("trigger_mode", false);
+    frame_rate = this->declare_parameter("frame_rate", 0.0);
 
     test_pattern = this->declare_parameter("test_pattern", "");
+
+    use_ptp = this->declare_parameter("ptp", false);
 
     pub_qos_history_ = this->declare_parameter("qos_history", "");
     is_passed_pub_qos_history_ = pub_qos_history_ != "";
@@ -169,7 +172,7 @@ void ArenaCameraNode::run_()
 {
   auto device = create_device_ros_();
   m_pDevice.reset(device);
-  set_nodes_();
+  configure_camera();
 
   m_pDevice->StartStream();
 
@@ -215,10 +218,14 @@ void ArenaCameraNode::publish_image()
 void ArenaCameraNode::msg_form_image_(Arena::IImage* pImage,
                                       sensor_msgs::msg::Image& image_msg)
 {
-    image_msg.header.stamp.sec =
-        static_cast<uint32_t>(pImage->GetTimestampNs() / 1000000000);
-    image_msg.header.stamp.nanosec =
-        static_cast<uint32_t>(pImage->GetTimestampNs() % 1000000000);
+    if (use_ptp) {
+        image_msg.header.stamp.sec =
+                static_cast<uint32_t>(pImage->GetTimestampNs() / 1000000000);
+        image_msg.header.stamp.nanosec =
+                static_cast<uint32_t>(pImage->GetTimestampNs() % 1000000000);
+    } else {
+        image_msg.header.stamp = get_clock()->now(); // this is rudimentary
+    }
     image_msg.header.frame_id = frame_id;
     image_msg.height = pImage->GetHeight();
     image_msg.width = pImage->GetWidth();
@@ -319,7 +326,7 @@ Arena::IDevice* ArenaCameraNode::create_device_ros_()
   m_pSystem->UpdateDevices(100);  // in millisec
   auto device_infos = m_pSystem->GetDevices();
   if (!device_infos.size()) {
-    // TODO: handel disconnection
+    // TODO: handle disconnection
     throw std::runtime_error(
         "camera(s) were disconnected after they were discovered");
   }
@@ -330,19 +337,37 @@ Arena::IDevice* ArenaCameraNode::create_device_ros_()
   }
 
   auto pDevice = m_pSystem->CreateDevice(device_infos.at(index));
-  RCLCPP_INFO(this->get_logger(), "device created %s", DeviceInfoHelper::info(device_infos.at(index)).c_str());
+  RCLCPP_INFO(this->get_logger(), "Device created %s", DeviceInfoHelper::info(device_infos.at(index)).c_str());
   return pDevice;
 }
 
-void ArenaCameraNode::set_nodes_()
+void ArenaCameraNode::configure_camera()
 {
   set_nodes_load_default_profile_();
+
   if (is_passed_width || is_passed_height)
     set_resolution();
+
   set_nodes_gain_();
   set_nodes_pixelformat_();
   set_nodes_exposure_();
   set_nodes_trigger_mode_();
+
+  auto nodemap = m_pDevice->GetNodeMap();
+
+  if (frame_rate > 0.0) {
+      // TODO https://support.thinklucid.com/knowledgebase/how-to-increase-maximum-allowable-exposure-time/
+      Arena::SetNodeValue<bool>(nodemap, "AcquisitionFrameRateEnable", true);
+      Arena::SetNodeValue<double>(nodemap, "AcquisitionFrameRate", frame_rate);
+      RCLCPP_INFO(this->get_logger(), "Acquisition frame rate is set to %f.", frame_rate);
+  }
+
+  if (use_ptp) {
+      Arena::SetNodeValue<bool>(nodemap, "PtpEnable", true);
+      Arena::SetNodeValue<bool>(nodemap, "PtpSlaveOnly", true);
+      RCLCPP_INFO(this->get_logger(), "PTP is enabled in slave configuration.");
+  }
+
   if (!test_pattern.empty()) {
     set_nodes_test_pattern_image_();
   }
@@ -356,7 +381,7 @@ void ArenaCameraNode::set_nodes_load_default_profile_()
   Arena::SetNodeValue<GenICam::gcstring>(nodemap, "UserSetSelector", "Default");
   // execute the profile
   Arena::ExecuteNode(nodemap, "UserSetLoad");
-  RCLCPP_INFO(this->get_logger(), "default profile is loaded");
+  RCLCPP_INFO(this->get_logger(), "Default profile is loaded");
 }
 
 void ArenaCameraNode::set_resolution()
@@ -418,7 +443,7 @@ void ArenaCameraNode::set_nodes_pixelformat_()
 
     if (pixelformat_ros_.empty()) {
       RCLCPP_WARN(this->get_logger(),
-          "the device current pixelfromat value is not supported by ROS2. "
+          "the device current pixelformat value is not supported by ROS2. "
           "please use --ros-args -p pixelformat:=\"<supported pixelformat>\".");
       // TODO
       // print list of supported pixelformats
@@ -441,7 +466,7 @@ void ArenaCameraNode::set_nodes_trigger_mode_()
   if (trigger_mode_activated_) {
     if (exposure_time_ < 0) {
       RCLCPP_WARN(this->get_logger(),
-          "\tavoid long waits wating for triggered images by providing proper "
+          "Avoid long waits wating for triggered images by providing proper "
           "exposure_time.");
     }
     // Enable trigger mode before setting the source and selector
