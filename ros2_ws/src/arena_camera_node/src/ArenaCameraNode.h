@@ -7,8 +7,6 @@
 // - should we rclcpp::shutdown in construction instead
 //
 
-// std
-#include <chrono>      //chrono_literals
 #include <functional>  // std::bind , std::placeholders
 
 // ros
@@ -93,6 +91,7 @@ class ArenaCameraNode : public rclcpp::Node
   void set_nodes_exposure_();
   void set_nodes_trigger_mode_();
   void set_nodes_test_pattern_image_();
+  void wait_for_ptp_sync();
   void publish_image();
 
   void publish_an_image_on_trigger_(

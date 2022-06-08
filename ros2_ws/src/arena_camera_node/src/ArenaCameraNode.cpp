@@ -1,6 +1,8 @@
-#include <cstring>    // memcopy
 #include <stdexcept>  // std::runtime_err
 #include <string>
+
+#include <chrono>
+#include <thread>
 
 // ROS
 #include "rmw/types.h"
@@ -174,6 +176,10 @@ void ArenaCameraNode::run_()
   m_pDevice.reset(device);
   configure_camera();
 
+  if (use_ptp) {
+      wait_for_ptp_sync();
+  }
+
   m_pDevice->StartStream();
 
   if (!trigger_mode_activated_) {
@@ -304,7 +310,6 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
     RCLCPP_WARN(this->get_logger(), msg.c_str());
     response->message = msg;
     response->success = false;
-
   }
 
   catch (GenICam::GenericException& e) {
@@ -339,6 +344,25 @@ Arena::IDevice* ArenaCameraNode::create_device_ros_()
   auto pDevice = m_pSystem->CreateDevice(device_infos.at(index));
   RCLCPP_INFO(this->get_logger(), "Device created %s", DeviceInfoHelper::info(device_infos.at(index)).c_str());
   return pDevice;
+}
+
+void ArenaCameraNode::wait_for_ptp_sync()
+{
+    using namespace std::chrono_literals;
+    auto nodemap = m_pDevice->GetNodeMap();
+
+    RCLCPP_INFO(this->get_logger(), "Checking for PTP sync...");
+
+    while (true) {
+        int64_t skew = Arena::GetNodeValue<int64_t>(nodemap, "PtpOffsetFromMaster");
+
+        if (skew == -1) {
+            std::this_thread::sleep_for(500ms);
+        } else {
+            RCLCPP_INFO(this->get_logger(), "PTP synced with %ld ns skew.", skew);
+            break;
+        }
+    }
 }
 
 void ArenaCameraNode::configure_camera()
