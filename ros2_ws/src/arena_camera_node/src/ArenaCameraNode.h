@@ -85,13 +85,13 @@ class ArenaCameraNode : public rclcpp::Node
   Arena::IDevice* create_device_ros_();
   void set_nodes_();
   void set_nodes_load_default_profile_();
-  void set_nodes_roi_();
+  void set_resolution();
   void set_nodes_gain_();
   void set_nodes_pixelformat_();
   void set_nodes_exposure_();
   void set_nodes_trigger_mode_();
   void set_nodes_test_pattern_image_();
-  void publish_images_();
+  void publish_image();
 
   void publish_an_image_on_trigger_(
       std::shared_ptr<std_srvs::srv::Trigger::Request> request,
