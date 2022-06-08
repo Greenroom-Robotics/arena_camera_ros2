@@ -13,7 +13,7 @@ def generate_launch_description():
                 # 'frame_rate': 10.0,
                 # 'test_pattern': 'Pattern3',
                 'trigger_mode': False,
-                # "ptp": True,
+                "ptp": True,
                 'frame_id': "/camera",
                 'qos_history': 'keep_last',
                 'qos_history_depth': 1,
