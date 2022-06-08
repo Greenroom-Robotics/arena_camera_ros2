@@ -61,7 +61,9 @@ class ArenaCameraNode : public rclcpp::Node
   std::string pixelformat_ros_;
   bool is_passed_pixelformat_ros_;
   std::string test_pattern;
+  double frame_rate;
   bool trigger_mode_activated_;
+  bool use_ptp;
 
   std::string frame_id;
 
@@ -83,7 +85,7 @@ class ArenaCameraNode : public rclcpp::Node
   // TODO :
   // - handle misconfigured device
   Arena::IDevice* create_device_ros_();
-  void set_nodes_();
+  void configure_camera();
   void set_nodes_load_default_profile_();
   void set_resolution();
   void set_nodes_gain_();
