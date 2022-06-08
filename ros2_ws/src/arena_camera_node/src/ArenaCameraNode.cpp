@@ -11,6 +11,8 @@
 #include "rclcpp_adapter/pixelformat_translation.h"
 #include "rclcpp_adapter/quilty_of_service_translation.cpp"
 
+constexpr int GETIMAGE_TIMEOUT = 1000;
+
 void ArenaCameraNode::parse_parameters_()
 {
     serial_ = this->declare_parameter<std::string>("serial", "");
@@ -80,34 +82,11 @@ void ArenaCameraNode::initialize_()
   m_wait_for_device_timer_callback_ = this->create_wall_timer(
       1s, std::bind(&ArenaCameraNode::wait_for_device_timer_callback_, this));
 
-  //
-  // TRIGGER (service) ------------------------------------------------------
-  //
   using namespace std::placeholders;
   m_trigger_an_image_srv_ = this->create_service<std_srvs::srv::Trigger>(
       "/arena_camera_node/trigger_image",
       std::bind(&ArenaCameraNode::publish_an_image_on_trigger_, this, _1, _2));
 
-  //
-  // Publisher --------------------------------------------------------------
-  //
-  // m_pub_qos is rclcpp::SensorDataQoS has these defaults
-  // https://github.com/ros2/rmw/blob/fb06b57975373b5a23691bb00eb39c07f1660ed7/rmw/include/rmw/qos_profiles.h#L25
-
-  /*
-  static const rmw_qos_profile_t rmw_qos_profile_sensor_data =
-  {
-    RMW_QOS_POLICY_HISTORY_KEEP_LAST,
-    5, // history depth
-    RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-    RMW_QOS_POLICY_DURABILITY_VOLATILE,
-    RMW_QOS_DEADLINE_DEFAULT,
-    RMW_QOS_LIFESPAN_DEFAULT,
-    RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT,
-    RMW_QOS_LIVELINESS_LEASE_DURATION_DEFAULT,
-    false // avoid ros namespace conventions
-  };
-  */
   rclcpp::SensorDataQoS pub_qos_;
   // QoS history
   if (is_passed_pub_qos_history_) {
@@ -142,10 +121,6 @@ void ArenaCameraNode::initialize_()
       throw;
     }
   }
-
-  // rmw_qos_history_policy_t history_policy_ = RMW_QOS_
-  // rmw_qos_history_policy_t;
-  // auto pub_qos_init = rclcpp::QoSInitialization(history_policy_, );
 
   m_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       "/arena_camera_node/images", pub_qos_);
@@ -195,71 +170,70 @@ void ArenaCameraNode::run_()
   auto device = create_device_ros_();
   m_pDevice.reset(device);
   set_nodes_();
+
   m_pDevice->StartStream();
 
   if (!trigger_mode_activated_) {
-    publish_images_();
+    while (rclcpp::ok()) {
+      publish_image();
+    }
   } else {
     // else ros::spin will
   }
 }
 
-void ArenaCameraNode::publish_images_()
+void ArenaCameraNode::publish_image()
 {
   Arena::IImage* pImage = nullptr;
-  while (rclcpp::ok()) {
-    try {
-      auto p_image_msg = std::make_unique<sensor_msgs::msg::Image>();
-      pImage = m_pDevice->GetImage(1000);
-      msg_form_image_(pImage, *p_image_msg);
+  try {
+    auto image_msg = std::make_unique<sensor_msgs::msg::Image>();
+    pImage = m_pDevice->GetImage(GETIMAGE_TIMEOUT);
 
-      m_pub_->publish(std::move(p_image_msg));
-
-      RCLCPP_DEBUG(this->get_logger(), "image %ld published", pImage->GetFrameId());
+    if (pImage != nullptr) {
+      if (!pImage->IsIncomplete()) {
+        msg_form_image_(pImage, *image_msg);
+        m_pub_->publish(std::move(image_msg));
+        RCLCPP_DEBUG(this->get_logger(), "image %ld published", pImage->GetFrameId());
+      } else {
+        RCLCPP_WARN(this->get_logger(), "Incomplete frame was returned by GetImage - discarding frame");
+      }
+      // the buffer has been copied to the msg so this is free to be re-queued
       this->m_pDevice->RequeueBuffer(pImage);
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "nullptr was returned by GetImage");
+    }
 
-    } catch (std::exception& e) {
-      if (pImage) {
+  } catch (std::exception& e) {
+    if (pImage) {
         this->m_pDevice->RequeueBuffer(pImage);
         pImage = nullptr;
-        RCLCPP_ERROR(this->get_logger(), "Exception occurred while publishing an image: %s", e.what());
-      }
     }
-  };
+    RCLCPP_ERROR(this->get_logger(), "Exception occurred while publishing an image: %s", e.what());
+  }
 }
 
 void ArenaCameraNode::msg_form_image_(Arena::IImage* pImage,
                                       sensor_msgs::msg::Image& image_msg)
 {
-  try {
     image_msg.header.stamp.sec =
         static_cast<uint32_t>(pImage->GetTimestampNs() / 1000000000);
     image_msg.header.stamp.nanosec =
         static_cast<uint32_t>(pImage->GetTimestampNs() % 1000000000);
     image_msg.header.frame_id = frame_id;
-    image_msg.height = height_;
-    image_msg.width = width_;
-    image_msg.encoding = pixelformat_ros_;
-    // TODO what to do if unknown
+    image_msg.height = pImage->GetHeight();
+    image_msg.width = pImage->GetWidth();
+    image_msg.encoding = pixelformat_ros_; // TODO - better way to map this than playing with strings
     image_msg.is_bigendian = pImage->GetPixelEndianness() ==
                              Arena::EPixelEndianness::PixelEndiannessBig;
-    // TODO could be optimized by moving it out
     auto pixel_length_in_bytes = pImage->GetBitsPerPixel() / 8;
-    auto width_length_in_bytes = pImage->GetWidth() * pixel_length_in_bytes;
+    auto width_length_in_bytes = image_msg.width * pixel_length_in_bytes;
+    auto image_data_length_in_bytes = width_length_in_bytes * image_msg.height;
     image_msg.step =
         static_cast<sensor_msgs::msg::Image::_step_type>(width_length_in_bytes);
 
-    auto image_data_length_in_bytes = width_length_in_bytes * height_;
     image_msg.data.resize(image_data_length_in_bytes);
-    auto x = pImage->GetData();
     std::memcpy(&image_msg.data[0], pImage->GetData(),
                 image_data_length_in_bytes);
-
-  } catch (...) {
-    RCLCPP_ERROR(this->get_logger(),
-        "Failed to create Image ROS MSG. Published Image Msg might be "
-        "corrupted");
-  }
 }
 
 void ArenaCameraNode::publish_an_image_on_trigger_(
@@ -363,7 +337,8 @@ Arena::IDevice* ArenaCameraNode::create_device_ros_()
 void ArenaCameraNode::set_nodes_()
 {
   set_nodes_load_default_profile_();
-  set_nodes_roi_();
+  if (is_passed_width || is_passed_height)
+    set_resolution();
   set_nodes_gain_();
   set_nodes_pixelformat_();
   set_nodes_exposure_();
@@ -384,26 +359,23 @@ void ArenaCameraNode::set_nodes_load_default_profile_()
   RCLCPP_INFO(this->get_logger(), "default profile is loaded");
 }
 
-void ArenaCameraNode::set_nodes_roi_()
+void ArenaCameraNode::set_resolution()
 {
   auto nodemap = m_pDevice->GetNodeMap();
 
-  // Width -------------------------------------------------
   if (is_passed_width) {
     Arena::SetNodeValue<int64_t>(nodemap, "Width", width_);
   } else {
     width_ = Arena::GetNodeValue<int64_t>(nodemap, "Width");
   }
 
-  // Height ------------------------------------------------
   if (is_passed_height) {
     Arena::SetNodeValue<int64_t>(nodemap, "Height", height_);
   } else {
     height_ = Arena::GetNodeValue<int64_t>(nodemap, "Height");
   }
 
-  // TODO only if it was passed by ros arg
-  RCLCPP_INFO(this->get_logger(),"ROI set to %ldx%ld", width_, height_);
+  RCLCPP_INFO(this->get_logger(),"Image resolution set to %ldx%ld", width_, height_);
 }
 
 void ArenaCameraNode::set_nodes_gain_()
@@ -419,7 +391,7 @@ void ArenaCameraNode::set_nodes_pixelformat_()
 {
   auto nodemap = m_pDevice->GetNodeMap();
   // TODO ---------------------------------------------------------------------
-  // PIXEL FORMAT HANDLEING
+  // PIXEL FORMAT HANDLING
 
   if (is_passed_pixelformat_ros_) {
     pixelformat_pfnc_ = K_ROS2_PIXELFORMAT_TO_PFNC[pixelformat_ros_];
@@ -486,11 +458,7 @@ void ArenaCameraNode::set_nodes_trigger_mode_()
                                            "Software");
     Arena::SetNodeValue<GenICam::gcstring>(nodemap, "TriggerSelector",
                                            "FrameStart");
-    auto msg =
-        std::string(
-            "\ttrigger_mode is activated. To trigger an image run `ros2 run ") +
-        this->get_name() + " trigger_image`";
-    RCLCPP_WARN(this->get_logger(), msg.c_str());
+    RCLCPP_WARN(this->get_logger(), "Trigger mode is activated. To trigger an image run `ros2 run arena_camera_node trigger_image`");
   }
   // unset device from being in trigger mode if user did not pass trigger
   // mode parameter because the trigger nodes are not rest when loading
@@ -510,11 +478,9 @@ void ArenaCameraNode::set_nodes_test_pattern_image_()
 
 int main(int argc, char* argv[])
 {
-  rclcpp::init(argc, argv);
-  {
+    rclcpp::init(argc, argv);
     auto node = std::make_shared<ArenaCameraNode>();
     rclcpp::spin(node);
-  }
-  rclcpp::shutdown();
-  return 0;
+    rclcpp::shutdown();
+    return 0;
 }
