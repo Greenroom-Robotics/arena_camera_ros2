@@ -68,28 +68,22 @@ ArenaCameraNode::ArenaCameraNode() : Node("arena_camera_node")
     RCLCPP_INFO(this->get_logger(), "Created %s node", this->get_name());
 }
 
+ArenaCameraNode::~ArenaCameraNode() {
+    if (m_pSystem) {
+        if (m_pDevice) {
+            m_pSystem->DestroyDevice(m_pDevice);
+            RCLCPP_INFO(this->get_logger(), "Device has been destroyed");
+        }
+
+        Arena::CloseSystem(m_pSystem);
+        RCLCPP_INFO(this->get_logger(), "System is destroyed");
+    }
+}
+
 void ArenaCameraNode::initialize_()
 {
   using namespace std::chrono_literals;
-  // ARENASDK ---------------------------------------------------------------
-  // Custom deleter for system
-  m_pSystem =
-      std::shared_ptr<Arena::ISystem>(nullptr, [=](Arena::ISystem* pSystem) {
-        if (pSystem) {  // this is an issue for multi devices
-          Arena::CloseSystem(pSystem);
-          RCLCPP_INFO(this->get_logger(), "System is destroyed");
-        }
-      });
-  m_pSystem.reset(Arena::OpenSystem());
-
-  // Custom deleter for device
-  m_pDevice =
-      std::shared_ptr<Arena::IDevice>(nullptr, [=](Arena::IDevice* pDevice) {
-        if (m_pSystem && pDevice) {
-          m_pSystem->DestroyDevice(pDevice);
-          RCLCPP_INFO(this->get_logger(), "Device is destroyed");
-        }
-      });
+  m_pSystem = Arena::OpenSystem();
 
   //
   // CHECK DEVICE CONNECTION ( timer ) --------------------------------------
@@ -180,9 +174,8 @@ void ArenaCameraNode::wait_for_device_timer_callback_()
 
 void ArenaCameraNode::run_()
 {
-  auto device = create_device_ros_();
-  m_pDevice.reset(device);
-  configure_camera();
+    m_pDevice = create_device_ros_();
+    configure_camera();
 
   if (use_ptp) {
       wait_for_ptp_sync();

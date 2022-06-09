@@ -21,10 +21,11 @@ class ArenaCameraNode : public rclcpp::Node
 {
  public:
     explicit ArenaCameraNode(); //(const rclcpp::NodeOptions &options);
+    ~ArenaCameraNode();
 
  private:
-  std::shared_ptr<Arena::ISystem> m_pSystem;
-  std::shared_ptr<Arena::IDevice> m_pDevice;
+  Arena::ISystem* m_pSystem;
+  Arena::IDevice* m_pDevice;
 
   sensor_msgs::msg::CameraInfo camera_info_msg;
 
