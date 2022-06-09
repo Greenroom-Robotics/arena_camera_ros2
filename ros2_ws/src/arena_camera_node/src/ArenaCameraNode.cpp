@@ -1,13 +1,11 @@
-#include <stdexcept>  // std::runtime_err
+#include <stdexcept>
 #include <string>
-
 #include <chrono>
 #include <thread>
 
-// ROS
 #include "rmw/types.h"
+#include "camera_calibration_parsers/parse.hpp"
 
-// ArenaSDK
 #include "ArenaCameraNode.h"
 #include "light_arena/deviceinfo_helper.h"
 #include "rclcpp_adapter/pixelformat_translation.h"
@@ -15,15 +13,15 @@
 
 constexpr int GETIMAGE_TIMEOUT = 1000;
 
-void ArenaCameraNode::parse_parameters_()
+
+ArenaCameraNode::ArenaCameraNode() : Node("arena_camera_node")
 {
     serial_ = this->declare_parameter<std::string>("serial", "");
-    is_passed_serial_ = serial_ != "";
 
     pixelformat_ros_ = this->declare_parameter("pixelformat", "");
-    is_passed_pixelformat_ros_ = pixelformat_ros_ != "";
 
-    frame_id = this->declare_parameter("frame_id", "lucid_camera");
+    camera_frame_id = this->declare_parameter("camera_frame_id", "lucid_camera");
+    camera_info_path = this->declare_parameter("camera_info_path", "");
 
     width_ = this->declare_parameter("width", 0);
     is_passed_width = width_ > 0;
@@ -45,13 +43,29 @@ void ArenaCameraNode::parse_parameters_()
     use_ptp = this->declare_parameter("ptp", false);
 
     pub_qos_history_ = this->declare_parameter("qos_history", "");
-    is_passed_pub_qos_history_ = pub_qos_history_ != "";
 
     pub_qos_history_depth_ = this->declare_parameter("qos_history_depth", 0);
     is_passed_pub_qos_history_depth_ = pub_qos_history_depth_ > 0;
 
     pub_qos_reliability_ = this->declare_parameter("qos_reliability", "");
-    is_passed_pub_qos_reliability_ = pub_qos_reliability_ != "";
+
+    if (!camera_info_path.empty()) {
+        std::string camera_name;
+        if (camera_calibration_parsers::readCalibration(camera_info_path, camera_name, camera_info_msg)) {
+            RCLCPP_INFO(get_logger(), "Parsed camera info for '%s'", camera_name.c_str());
+            camera_info_msg.header.frame_id = camera_frame_id;
+            camera_info_pub = create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", 10);
+        } else {
+            RCLCPP_ERROR(get_logger(), "Cannot read camera info from path '%s'", camera_info_path.c_str());
+            camera_info_pub = nullptr;
+        }
+    } else {
+        RCLCPP_WARN(get_logger(), "No camera info path provided. camera_info will not be published.");
+        camera_info_pub = nullptr;
+    }
+
+    initialize_();
+    RCLCPP_INFO(this->get_logger(), "Created %s node", this->get_name());
 }
 
 void ArenaCameraNode::initialize_()
@@ -89,12 +103,12 @@ void ArenaCameraNode::initialize_()
 
   using namespace std::placeholders;
   m_trigger_an_image_srv_ = this->create_service<std_srvs::srv::Trigger>(
-      "/arena_camera_node/trigger_image",
+      "trigger_capture",
       std::bind(&ArenaCameraNode::publish_an_image_on_trigger_, this, _1, _2));
 
   rclcpp::SensorDataQoS pub_qos_;
   // QoS history
-  if (is_passed_pub_qos_history_) {
+  if (!pub_qos_history_.empty()) {
     if (is_supported_qos_histroy_policy(pub_qos_history_)) {
       pub_qos_.history(
           K_CMDLN_PARAMETER_TO_QOS_HISTORY_POLICY[pub_qos_history_]);
@@ -117,7 +131,7 @@ void ArenaCameraNode::initialize_()
   }
 
   // Qos reliability
-  if (is_passed_pub_qos_reliability_) {
+  if (!pub_qos_reliability_.empty()) {
     if (is_supported_qos_reliability_policy(pub_qos_reliability_)) {
       pub_qos_.reliability(
           K_CMDLN_PARAMETER_TO_QOS_RELIABILITY_POLICY[pub_qos_reliability_]);
@@ -127,28 +141,22 @@ void ArenaCameraNode::initialize_()
     }
   }
 
-  m_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-      "/arena_camera_node/images", pub_qos_);
+  m_pub_ = this->create_publisher<sensor_msgs::msg::Image>("image_raw", pub_qos_);
 
   std::stringstream pub_qos_info;
   auto pub_qos_profile = pub_qos_.get_rmw_qos_profile();
   pub_qos_info
-      << '\t' << "QoS history     = "
+      << "[QoS] History: "
       << K_QOS_HISTORY_POLICY_TO_CMDLN_PARAMETER[pub_qos_profile.history]
-      << '\n';
-  pub_qos_info << "\t\t\t\t"
-               << "QoS depth       = " << pub_qos_profile.depth << '\n';
-  pub_qos_info << "\t\t\t\t"
-               << "QoS reliability = "
-               << K_QOS_RELIABILITY_POLICY_TO_CMDLN_PARAMETER[pub_qos_profile
-                                                                  .reliability];
+      << " | Depth: " << pub_qos_profile.depth << " | Reliability: "
+      << K_QOS_RELIABILITY_POLICY_TO_CMDLN_PARAMETER[pub_qos_profile.reliability];
 
   RCLCPP_INFO(this->get_logger(), pub_qos_info.str().c_str());
 }
 
 void ArenaCameraNode::wait_for_device_timer_callback_()
 {
-  // something happend while checking for cameras
+  // something happened while checking for cameras
   if (!rclcpp::ok()) {
     RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for arena camera. Exiting.");
     rclcpp::shutdown();
@@ -202,6 +210,11 @@ void ArenaCameraNode::publish_image()
       if (!pImage->IsIncomplete()) {
         msg_form_image_(pImage, *image_msg);
         m_pub_->publish(std::move(image_msg));
+
+        if (camera_info_pub != nullptr) {
+            camera_info_msg.header.stamp = image_msg->header.stamp;
+            camera_info_pub->publish(camera_info_msg);
+        }
         RCLCPP_DEBUG(this->get_logger(), "image %ld published", pImage->GetFrameId());
       } else {
         RCLCPP_WARN(this->get_logger(), "Incomplete frame was returned by GetImage - discarding frame");
@@ -232,7 +245,7 @@ void ArenaCameraNode::msg_form_image_(Arena::IImage* pImage,
     } else {
         image_msg.header.stamp = get_clock()->now(); // this is rudimentary
     }
-    image_msg.header.frame_id = frame_id;
+    image_msg.header.frame_id = camera_frame_id;
     image_msg.height = pImage->GetHeight();
     image_msg.width = pImage->GetWidth();
     image_msg.encoding = pixelformat_ros_; // TODO - better way to map this than playing with strings
@@ -264,7 +277,6 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
 
   RCLCPP_INFO(this->get_logger(), "A client triggered an image request");
 
-  Arena::IImage* pImage = nullptr;
   try {
     // trigger
     bool triggerArmed = false;
@@ -283,45 +295,22 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
     RCLCPP_DEBUG(this->get_logger(), "trigger is armed; triggering an image");
     Arena::ExecuteNode(m_pDevice->GetNodeMap(), "TriggerSoftware");
 
-    // get image
-    auto p_image_msg = std::make_unique<sensor_msgs::msg::Image>();
-
-    RCLCPP_DEBUG(this->get_logger(), "getting an image");
-    pImage = m_pDevice->GetImage(1000);
-    auto msg = std::string("image ") + std::to_string(pImage->GetFrameId()) +
-               " published";
-    msg_form_image_(pImage, *p_image_msg);
-    m_pub_->publish(std::move(p_image_msg));
-    response->message = msg;
+    publish_image();
+    response->message = "Ok";
     response->success = true;
 
-    RCLCPP_INFO(this->get_logger(), msg.c_str());
-    this->m_pDevice->RequeueBuffer(pImage);
-
+    RCLCPP_INFO(this->get_logger(), "Image published");
   }
 
   catch (std::exception& e) {
-    if (pImage) {
-      this->m_pDevice->RequeueBuffer(pImage);
-      pImage = nullptr;
-    }
-    auto msg =
-        std::string("Exception occurred while grabbing an image\n") + e.what();
-    RCLCPP_WARN(this->get_logger(), msg.c_str());
-    response->message = msg;
+    RCLCPP_ERROR(this->get_logger(), "Exception occurred while triggering an image: %s", e.what());
+    response->message = "Error";
     response->success = false;
   }
 
   catch (GenICam::GenericException& e) {
-    if (pImage) {
-      this->m_pDevice->RequeueBuffer(pImage);
-      pImage = nullptr;
-    }
-    auto msg =
-        std::string("GenICam Exception occurred while grabbing an image\n") +
-        e.what();
-    RCLCPP_WARN(this->get_logger(), msg.c_str());
-    response->message = msg;
+    RCLCPP_ERROR(this->get_logger(), "GenICam Exception occurred while triggering an image %s", e.what());
+    response->message = "Error";
     response->success = false;
   }
 }
@@ -337,7 +326,7 @@ Arena::IDevice* ArenaCameraNode::create_device_ros_()
   }
 
   auto index = 0;
-  if (is_passed_serial_) {
+  if (!serial_.empty()) {
     index = DeviceInfoHelper::get_index_of_serial(device_infos, serial_);
   }
 
@@ -424,7 +413,7 @@ void ArenaCameraNode::set_resolution()
     height_ = Arena::GetNodeValue<int64_t>(nodemap, "Height");
   }
 
-  RCLCPP_INFO(this->get_logger(),"Image resolution set to %ldx%ld", width_, height_);
+  RCLCPP_INFO(this->get_logger(),"Image resolution set to %d x %d", width_, height_);
 }
 
 void ArenaCameraNode::set_nodes_gain_()
@@ -442,7 +431,7 @@ void ArenaCameraNode::set_nodes_pixelformat_()
   // TODO ---------------------------------------------------------------------
   // PIXEL FORMAT HANDLING
 
-  if (is_passed_pixelformat_ros_) {
+  if (!pixelformat_ros_.empty()) {
     pixelformat_pfnc_ = K_ROS2_PIXELFORMAT_TO_PFNC[pixelformat_ros_];
     if (pixelformat_pfnc_.empty()) {
       throw std::invalid_argument("pixelformat is not supported!");

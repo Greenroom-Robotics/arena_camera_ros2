@@ -7,74 +7,60 @@
 // - should we rclcpp::shutdown in construction instead
 //
 
-#include <functional>  // std::bind , std::placeholders
+#include <functional>
 
-// ros
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp/timer.hpp>           // WallTimer
-#include <sensor_msgs/msg/image.hpp>  //image msg published
-#include <std_srvs/srv/trigger.hpp>   // Trigger
+#include <rclcpp/timer.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <std_srvs/srv/trigger.hpp>
 
-// arena sdk
 #include "Arena/ArenaApi.h"
 
 class ArenaCameraNode : public rclcpp::Node
 {
  public:
-  ArenaCameraNode() : Node("arena_camera_node")
-  {
-    // set stdout buffer size for ROS defined size BUFSIZE
-    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
-
-    RCLCPP_INFO(this->get_logger(), "Initialising %s node", this->get_name());
-    parse_parameters_();
-    initialize_();
-    RCLCPP_INFO(this->get_logger(), "Created %s node", this->get_name());
-  }
+    explicit ArenaCameraNode(); //(const rclcpp::NodeOptions &options);
 
  private:
   std::shared_ptr<Arena::ISystem> m_pSystem;
   std::shared_ptr<Arena::IDevice> m_pDevice;
 
+  sensor_msgs::msg::CameraInfo camera_info_msg;
+
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr m_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_pub;
   rclcpp::TimerBase::SharedPtr m_wait_for_device_timer_callback_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr m_trigger_an_image_srv_;
 
   std::string serial_;
-  bool is_passed_serial_;
 
-  size_t width_;
+  int width_;
   bool is_passed_width;
-
-  size_t height_;
+  int height_;
   bool is_passed_height;
 
   double gain_;
   bool is_passed_gain_;
-
   double exposure_time_;
   bool is_passed_exposure_time_;
-
   std::string pixelformat_pfnc_;
   std::string pixelformat_ros_;
-  bool is_passed_pixelformat_ros_;
   std::string test_pattern;
   double frame_rate;
   bool trigger_mode_activated_;
   bool use_ptp;
 
-  std::string frame_id;
+  std::string camera_info_path;
+  std::string camera_frame_id;
 
   std::string pub_qos_history_;
-  bool is_passed_pub_qos_history_;
 
-  size_t pub_qos_history_depth_;
+  int pub_qos_history_depth_;
   bool is_passed_pub_qos_history_depth_;
 
   std::string pub_qos_reliability_;
-  bool is_passed_pub_qos_reliability_;
 
-  void parse_parameters_();
   void initialize_();
 
   void wait_for_device_timer_callback_();
