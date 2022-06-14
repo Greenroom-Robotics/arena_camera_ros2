@@ -1,19 +1,13 @@
 # arena_camera_ros2
-Arena Camera deriver for ROS2
+Arena Camera driver for ROS2
 
 # Note
 - Please provide your feedback is welcomed at support@thinklucid.com or the repo issue page
   
 # Requirements
-- 1 
-  - OS       : Linux (x64/amd64/arm64) (==18.04) 
-  - ROS2     : Eloquent distro (installation steps in ros2_arena_setup.sh)
-  - ArenaSDK : Contact support@thinklucid.com
-  - arena_api : Contact support@thinklucid.com
-- or 2 Docker
-  - ArenaSDK : Contact support@thinklucid.com
-  - arena_api : Contact support@thinklucid.com
-  - build the docker image provided
+  - OS       : Linux (x64/amd64/arm64) (>=20.04) 
+  - ROS2     : Humble
+  - ArenaSDK : thinklucid.com website
   
 # Getting Started
 - clone repo or download release
@@ -111,18 +105,6 @@ Arena Camera deriver for ROS2
 
           `ros2 run arena_camera_node start --ros-args -p serial:="904240001" -p topic:=/special_images -p width:=100 -p height:=200 -p pixelformat:=rgb8 -p gain:=10 -p exposure_time:=150 -p trigger_mode:=true` 
 
-- explore excutables
-
-  - `ros2 pkg executables | grep arena`
-    
-  - all excutables can be run by using 
-
-    `ros2 run <pakg name> <executable name>`
-
-- explore actions
-  
-  - None
-
 - explore services 
   - trigger_image 
     - trigger image form a device that is running in trigger_mode.
@@ -130,14 +112,3 @@ Arena Camera deriver for ROS2
       `ros2 run arena_camera_node start --ros-args -p exposure_time:=<proper value> -p trigger_mode=true`
     - To trigger an image run 
       `ros2 run arena_camera_node trigger_image`
-
-# Road map
-- support windows
-- add -h flag to nodes
-- showimage node to view 2D and 3D images
-- launch file
-- support ARMhf
-- camera_info
-- access to nodemaps
-- settings dump/read to/from file
-- support two devices
