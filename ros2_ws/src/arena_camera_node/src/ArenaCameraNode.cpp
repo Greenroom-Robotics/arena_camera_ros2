@@ -1,7 +1,7 @@
 #include <stdexcept>
 #include <string>
 #include <chrono>
-#include <thread>
+
 
 #include "rmw/types.h"
 #include "camera_calibration_parsers/parse.hpp"
@@ -69,6 +69,11 @@ ArenaCameraNode::ArenaCameraNode() : Node("arena_camera_node")
 }
 
 ArenaCameraNode::~ArenaCameraNode() {
+    shutdown = true;
+    if (camera_thread.joinable()) {
+        camera_thread.join();
+    }
+
     if (m_pSystem) {
         if (m_pDevice) {
             m_pSystem->DestroyDevice(m_pDevice);
@@ -84,16 +89,6 @@ void ArenaCameraNode::initialize_()
 {
   using namespace std::chrono_literals;
   m_pSystem = Arena::OpenSystem();
-
-  //
-  // CHECK DEVICE CONNECTION ( timer ) --------------------------------------
-  //
-  // TODO
-  // - Think of design that allow the node to start stream as soon as
-  // it is initialized without waiting for spin to be called
-  // - maybe change 1s to a smaller value
-  m_wait_for_device_timer_callback_ = this->create_wall_timer(
-      1s, std::bind(&ArenaCameraNode::wait_for_device_timer_callback_, this));
 
   using namespace std::placeholders;
   m_trigger_an_image_srv_ = this->create_service<std_srvs::srv::Trigger>(
@@ -146,78 +141,94 @@ void ArenaCameraNode::initialize_()
       << K_QOS_RELIABILITY_POLICY_TO_CMDLN_PARAMETER[pub_qos_profile.reliability];
 
   RCLCPP_INFO(this->get_logger(), pub_qos_info.str().c_str());
+
+  camera_thread = std::thread(std::bind(&ArenaCameraNode::loop, this));
 }
 
-void ArenaCameraNode::wait_for_device_timer_callback_()
+void ArenaCameraNode::discover_camera()
 {
-  // something happened while checking for cameras
-  if (!rclcpp::ok()) {
-    RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for arena camera. Exiting.");
-    rclcpp::shutdown();
-  }
+    // something happened while checking for cameras
+    if (!rclcpp::ok()) {
+        RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for arena camera. Exiting.");
+        rclcpp::shutdown();
+    }
 
-  // camera discovery
-  m_pSystem->UpdateDevices(100);  // in millisec
-  auto device_infos = m_pSystem->GetDevices();
+    std::vector<Arena::DeviceInfo> device_infos;
+    RCLCPP_INFO(this->get_logger(), "Waiting for camera device(s)...");
 
-  // no camera is connected
-  if (!device_infos.size()) {
-    RCLCPP_INFO(this->get_logger(), "No arena camera is connected. Waiting for device(s)...");
-  }
-  // at least one is found
-  else {
-    m_wait_for_device_timer_callback_->cancel();
+    while (true) {
+        m_pSystem->UpdateDevices(100);  // in millisec
+        device_infos = m_pSystem->GetDevices();
+
+        // no camera is connected
+        if (device_infos.size() > 0) {
+            break;
+        }
+    }
+
     RCLCPP_INFO(this->get_logger(), "%ld arena device(s) has been discovered.", device_infos.size());
-    run_();
-  }
-}
 
-void ArenaCameraNode::run_()
-{
-    m_pDevice = create_device_ros_();
+    m_pDevice = create_device_ros_(device_infos);
+    connected = true;
     configure_camera();
 
-  if (use_ptp) {
-      wait_for_ptp_sync();
-  }
-
-  m_pDevice->StartStream();
-
-  if (!trigger_mode_activated_) {
-    while (rclcpp::ok()) {
-      publish_image();
+    if (use_ptp) {
+        wait_for_ptp_sync();
     }
-  } else {
-    // else ros::spin will
-  }
+
+    m_pDevice->StartStream();
+    RCLCPP_INFO(this->get_logger(), "Started streaming");
+}
+
+void ArenaCameraNode::loop()
+{
+    using namespace std::chrono_literals;
+    while (!shutdown) {
+        discover_camera();
+
+        if (!trigger_mode_activated_) {
+            while (connected && !shutdown) {
+                publish_image();
+            }
+        } else {
+            std::this_thread::sleep_for(100ms);
+        }
+
+        if (m_pDevice) {
+            m_pSystem->DestroyDevice(m_pDevice);
+            RCLCPP_INFO(this->get_logger(), "Device has been destroyed");
+        }
+    }
 }
 
 void ArenaCameraNode::publish_image()
 {
   Arena::IImage* pImage = nullptr;
   try {
-    auto image_msg = std::make_unique<sensor_msgs::msg::Image>();
-    pImage = m_pDevice->GetImage(GETIMAGE_TIMEOUT);
+      auto image_msg = std::make_unique<sensor_msgs::msg::Image>();
+      pImage = m_pDevice->GetImage(GETIMAGE_TIMEOUT);
 
-    if (pImage != nullptr) {
-      if (!pImage->IsIncomplete()) {
-        msg_form_image_(pImage, *image_msg);
-        m_pub_->publish(std::move(image_msg));
+      if (pImage != nullptr) {
+          if (!pImage->IsIncomplete()) {
+              msg_form_image_(pImage, *image_msg);
+              m_pub_->publish(std::move(image_msg));
 
-        if (camera_info_pub != nullptr) {
-            camera_info_msg.header.stamp = image_msg->header.stamp;
-            camera_info_pub->publish(camera_info_msg);
-        }
-        RCLCPP_DEBUG(this->get_logger(), "image %ld published", pImage->GetFrameId());
+              if (camera_info_pub != nullptr) {
+                  camera_info_msg.header.stamp = image_msg->header.stamp;
+                  camera_info_pub->publish(camera_info_msg);
+              }
+              RCLCPP_DEBUG(this->get_logger(), "image %ld published", pImage->GetFrameId());
+          } else {
+              RCLCPP_WARN(this->get_logger(), "Incomplete frame was returned by GetImage - discarding frame");
+          }
+          // the buffer has been copied to the msg so this is free to be re-queued
+          this->m_pDevice->RequeueBuffer(pImage);
       } else {
-        RCLCPP_WARN(this->get_logger(), "Incomplete frame was returned by GetImage - discarding frame");
+          RCLCPP_ERROR(this->get_logger(), "nullptr was returned by GetImage");
       }
-      // the buffer has been copied to the msg so this is free to be re-queued
-      this->m_pDevice->RequeueBuffer(pImage);
-    } else {
-      RCLCPP_ERROR(this->get_logger(), "nullptr was returned by GetImage");
-    }
-
+  } catch (GenICam::TimeoutException& e) {
+      RCLCPP_ERROR(this->get_logger(), "Timeout occured when obtaining frame. Attemping to reconnect.");
+      connected = false;
   } catch (std::exception& e) {
     if (pImage) {
         this->m_pDevice->RequeueBuffer(pImage);
@@ -308,16 +319,8 @@ void ArenaCameraNode::publish_an_image_on_trigger_(
   }
 }
 
-Arena::IDevice* ArenaCameraNode::create_device_ros_()
+Arena::IDevice* ArenaCameraNode::create_device_ros_(std::vector<Arena::DeviceInfo>& device_infos)
 {
-  m_pSystem->UpdateDevices(100);  // in millisec
-  auto device_infos = m_pSystem->GetDevices();
-  if (!device_infos.size()) {
-    // TODO: handle disconnection
-    throw std::runtime_error(
-        "camera(s) were disconnected after they were discovered");
-  }
-
   auto index = 0;
   if (!serial_.empty()) {
     index = DeviceInfoHelper::get_index_of_serial(device_infos, serial_);
@@ -333,7 +336,7 @@ void ArenaCameraNode::wait_for_ptp_sync()
     using namespace std::chrono_literals;
     auto nodemap = m_pDevice->GetNodeMap();
 
-    RCLCPP_INFO(this->get_logger(), "Checking for PTP sync...");
+    RCLCPP_INFO(this->get_logger(), "Waiting for PTP sync...");
 
     while (true) {
         int64_t skew = Arena::GetNodeValue<int64_t>(nodemap, "PtpOffsetFromMaster");

@@ -8,6 +8,7 @@
 //
 
 #include <functional>
+#include <thread>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/timer.hpp>
@@ -26,6 +27,9 @@ class ArenaCameraNode : public rclcpp::Node
  private:
   Arena::ISystem* m_pSystem;
   Arena::IDevice* m_pDevice;
+  bool connected;
+  bool shutdown = false;
+  std::thread camera_thread;
 
   sensor_msgs::msg::CameraInfo camera_info_msg;
 
@@ -64,12 +68,12 @@ class ArenaCameraNode : public rclcpp::Node
 
   void initialize_();
 
-  void wait_for_device_timer_callback_();
+  void discover_camera();
 
-  void run_();
+  void loop();
   // TODO :
   // - handle misconfigured device
-  Arena::IDevice* create_device_ros_();
+  Arena::IDevice* create_device_ros_(std::vector<Arena::DeviceInfo>& device_infos);
   void configure_camera();
   void set_nodes_load_default_profile_();
   void set_resolution();
