@@ -33,7 +33,7 @@ class TriggerArenaImageClientNode : public rclcpp::Node
   void send_request()
   {
     auto req_ = std::make_shared<std_srvs::srv::Trigger::Request>();
-    m_result = m_cli_->async_send_request(req_).future.share();
+    m_result = m_cli_->async_send_request(req_); // TODO when moved away from galactic add .future.share()
   }
 
   std::shared_future<std::shared_ptr<std_srvs::srv::Trigger_Response>> m_result;
