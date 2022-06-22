@@ -25,16 +25,19 @@ jobs:
         with:
           path: ${{ github.repository }}
 
-      - name: Download API from GHCR
+      - name: Download SDK binaries from GHCR
         run: |
           curl -L https://github.com/oras-project/oras/releases/download/v0.2.1-alpha.1/oras_0.2.1-alpha.1_linux_amd64.tar.gz | sudo tar -xzv -C /usr/local/bin oras
           oras login -u $GITHUB_ACTOR -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
           (cd ${{ github.repository }}/arena_sdk_vendor; oras pull ghcr.io/greenroom-robotics/arenasdk:v0.1.59_amd64 -a)
 
-      - name: Build Debian package
+      - name: Build Debian packages
         uses: Greenroom-Robotics/ros2-build-debian-action@main
         with:
           ros2-distro: ${{ github.event.inputs.distro }}
+          bloom-generate-extra-args: --ignore-shlibs-missing-info
+          token: ${{ secrets.API_TOKEN_GITHUB }}
+          overlay-index: https://raw.githubusercontent.com/Greenroom-Robotics/rosdistro/main/overlay.yaml
 
       - name: Create a release
         uses: softprops/action-gh-release@v1
@@ -50,7 +53,7 @@ jobs:
         env:
           API_TOKEN_GITHUB: ${{ secrets.API_TOKEN_GITHUB }}
         with:
-          source_file: package/*.deb
+          source_file: package/*.deb package/*.ddeb
           destination_repo: 'Greenroom-Robotics/packages'
           destination_folder: 'debian'
           user_email: 'ci@greenroomrobotics.com'
