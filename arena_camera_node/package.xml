@@ -15,7 +15,7 @@
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <depend>sensor_msgs</depend>
-  <build_depend>camera_calibration_parsers</build_depend>
+  <depend>camera_calibration_parsers</depend>
 
   <depend>arena_sdk_vendor</depend>
 
