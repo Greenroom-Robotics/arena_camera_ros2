@@ -9,7 +9,7 @@
     Wrapper around binary distributions of Lucid ArenaSDK.
   </description>
   <maintainer email="russ.webber@greenroomrobotics.com">Russ Webber</maintainer>
-  <license>Proprietary</license>
+  <license>MIT</license>
 
   <url type="website"></url>
 
