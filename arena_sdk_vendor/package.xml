@@ -4,7 +4,7 @@
   schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="2">
   <name>arena_sdk_vendor</name>
-  <version>0.1.59</version>
+  <version>1.68.0</version>
   <description>
     Wrapper around binary distributions of Lucid ArenaSDK.
   </description>

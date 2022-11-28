@@ -4,29 +4,31 @@ project(arena_sdk_vendor)
 
 find_package(ament_cmake REQUIRED)
 
+set(ARENA_SDK_VER 1.68)
+
 set(lib64_libs
   libsavec.so.0
-  libsavec.so.0.1.59
+  libsavec.so.0.${ARENA_SDK_VER}
   libarenacd.so.0
-  libarenacd.so.0.1.59
+  libarenacd.so.0.${ARENA_SDK_VER}
   libarenac.so
-  libarenac.so.0.1.59
+  libarenac.so.0.${ARENA_SDK_VER}
   libgentld.so
-  libgentld.so.0.1.59
+  libgentld.so.0.${ARENA_SDK_VER}
   libgentl.so
-  libgentl.so.0.1.59
+  libgentl.so.0.${ARENA_SDK_VER}
   liblucidlog.so
-  liblucidlog.so.0.1.59
+  liblucidlog.so.0.${ARENA_SDK_VER}
   libsavecd.so
-  libsavecd.so.0.1.59
+  libsavecd.so.0.${ARENA_SDK_VER}
   libsave.so
-  libsave.so.0.1.59
+  libsave.so.0.${ARENA_SDK_VER}
   libarenacd.so
   libarenad.so.0
-  libarenad.so.0.1.59
+  libarenad.so.0.${ARENA_SDK_VER}
   libsavecd.so.0
   libsaved.so.0
-  libsaved.so.0.1.59
+  libsaved.so.0.${ARENA_SDK_VER}
   libarenac.so.0
   libgentld.so.0
   libgentl.so.0
@@ -34,9 +36,9 @@ set(lib64_libs
   liblucidlog.so.0
   libsavec.so
   libarena.so.0
-  libarena.so.0.1.59
+  libarena.so.0.${ARENA_SDK_VER}
   libarena.so
-  liblucidlogd.so.0.1.59
+  liblucidlogd.so.0.${ARENA_SDK_VER}
   libsave.so.0
   liblucidlogd.so
   libarenad.so
@@ -59,9 +61,9 @@ macro(unpack_arenasdk)
   # download the SDK from the Lucid website # URL https://thinklucid.com/product/arena-sdk-linux-64-bit-44-mb/
 
   externalproject_add(arenasdk-bin-dist
-    URL file://${CMAKE_CURRENT_SOURCE_DIR}/ArenaSDK_v0.1.59_Linux_x64.tar.gz
-    URL_HASH SHA256=e268e487a7ea3e7aa3cfe6241ab881ded7dc1ec9ab87e880b76372c7e52b660e
-    DOWNLOAD_NAME ArenaSDK_v0.1.59_Linux_x64.tar.gz
+    URL file://${CMAKE_CURRENT_SOURCE_DIR}/ArenaSDK_v0.${ARENA_SDK_VER}_Linux_x64.tar.gz
+    URL_HASH SHA256=b0ee3ecf3909986c6ca91442f0bc1edf380597022cd5092e9f3d753ba798f05f
+    DOWNLOAD_NAME ArenaSDK_v0.${ARENA_SDK_VER}_Linux_x64.tar.gz
     DOWNLOAD_DIR ${CMAKE_CURRENT_SOURCE_DIR}
     BUILD_IN_SOURCE True
     SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/src/
@@ -94,7 +96,7 @@ macro(unpack_arenasdk)
   )
 
   install(
-    FILES ${CMAKE_CURRENT_BINARY_DIR}/src/ArenaSDK_Linux_x64/OutputDirectory/Linux/x64Release/IpConfigUtility
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/src/ArenaSDK_Linux_x64/Utilities/IpConfigUtility
     DESTINATION bin
   )
 
